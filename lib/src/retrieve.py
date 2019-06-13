@@ -210,3 +210,43 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
         else:
             continue
 
+def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
+
+    response, faces,bboxs = align_face(gray,pnet, rnet, onet)
+    result_list = []
+    if (response == True):
+        for i, image in enumerate(faces):
+            bb = bboxs[i]
+            images = load_img(image, False, False, image_size)
+            feed_dict = { images_placeholder:images, phase_train_placeholder:False }
+            feature_vector = sess.run(embeddings, feed_dict=feed_dict)
+            result, accuracy = identify_person(feature_vector, feature_array,8)
+            result_name = result.split("/")[-2] #.encode('utf-8')
+
+            print(result_name)
+            print(accuracy)
+            # append result
+            result_list.append({
+                'box': bb, 
+                'name': result_name,
+                'acc': accuracy})
+            #if accuracy < 0.9:
+
+
+                #cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
+                #W = int(bb[2]-bb[0])//2
+                #H = int(bb[3]-bb[1])//2
+                #gray_img = Image.fromarray(gray)
+                #draw = ImageDraw.Draw(gray_img)
+                #draw.text((bb[0] + W - (W//2), bb[1] - 28), result_name, font=font, fill='white')
+                #gray = np.array(gray_img)
+
+            #else:
+                #cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
+                #W = int(bb[2]-bb[0])//2
+                #H = int(bb[3]-bb[1])//2
+                #cv2.putText(gray,"WHO ARE YOU ?",(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
+            del feature_vector
+    return result
+
+
