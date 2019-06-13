@@ -46,7 +46,9 @@ import cv2
 from lib.src.align import detect_face
 from datetime import datetime
 from scipy import ndimage
-from scipy.misc import imsave 
+#from scipy.misc import imsave 
+import imageio
+from PIL import ImageFont, ImageDraw, Image
 from scipy.spatial.distance import cosine
 import pickle
 #face_cascade = cv2.CascadeClassifier('out/face/haarcascade_frontalface_default.xml')
@@ -70,72 +72,80 @@ args = parser.parse_args()
 
 def align_face(img,pnet, rnet, onet):
 
-		        minsize = 20 # minimum size of face
-		        threshold = [ 0.6, 0.7, 0.7 ]  # three steps's threshold
-		        factor = 0.709 # scale factor
+    minsize = 20 # minimum size of face
+    threshold = [ 0.6, 0.7, 0.7 ]  # three steps's threshold
+    factor = 0.709 # scale factor
 
-                        print("before img.size == 0")	
-                        if img.size == 0:
-                                print("empty array")
-				return False,img,[0,0,0,0]
+    print("before img.size == 0")	
+    if img.size == 0:
+        print("empty array")
+        return False,img,[0,0,0,0]
 
-                        if img.ndim<2:
-                            print('Unable to align')
+    if img.ndim<2:
+        print('Unable to align')
 
-                        if img.ndim == 2:
-                            img = to_rgb(img)
+    if img.ndim == 2:
+        img = to_rgb(img)
 
-                        img = img[:,:,0:3]
+    img = img[:,:,0:3]
 	
-			bounding_boxes, _ = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
+    bounding_boxes, _ = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
 
-                        nrof_faces = bounding_boxes.shape[0]
+    nrof_faces = bounding_boxes.shape[0]
 
                         
-                        if nrof_faces==0:
-                            return False,img,[0,0,0,0]
-                        else:
-                            det = bounding_boxes[:,0:4]
-                            det_arr = []
-                            img_size = np.asarray(img.shape)[0:2]
-                            if nrof_faces>1:
-                                if args.detect_multiple_faces:
-                                    for i in range(nrof_faces):
-                                        det_arr.append(np.squeeze(det[i]))
-                                else:
-                                    bounding_box_size = (det[:,2]-det[:,0])*(det[:,3]-det[:,1])
-                                    img_center = img_size / 2
-                                    offsets = np.vstack([ (det[:,0]+det[:,2])/2-img_center[1], (det[:,1]+det[:,3])/2-img_center[0] ])
-                                    offset_dist_squared = np.sum(np.power(offsets,2.0),0)
-                                    index = np.argmax(bounding_box_size-offset_dist_squared*2.0) # some extra weight on the centering
-                                    det_arr.append(det[index,:])
-                            else:
-                                det_arr.append(np.squeeze(det))
-                            if len(det_arr)>0:
-                                    faces = []
-                                    bboxes = []
-		                    for i, det in enumerate(det_arr):
-		                        det = np.squeeze(det)
-		                        bb = np.zeros(4, dtype=np.int32)
-		                        bb[0] = np.maximum(det[0]-args.margin/2, 0)
-		                        bb[1] = np.maximum(det[1]-args.margin/2, 0)
-		                        bb[2] = np.minimum(det[2]+args.margin/2, img_size[1])
-		                        bb[3] = np.minimum(det[3]+args.margin/2, img_size[0])
-		                        cropped = img[bb[1]:bb[3],bb[0]:bb[2],:]
-		                        scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
-		                        misc.imsave("cropped.png", scaled)
-                                        faces.append(scaled)
-                                        bboxes.append(bb)
-		                        print("leaving align face")
-		                    return True,faces,bboxes
+    if nrof_faces==0:
+        return False,img,[0,0,0,0]
+    else:
+        det = bounding_boxes[:,0:4]
+        det_arr = []
+        img_size = np.asarray(img.shape)[0:2]
+        if nrof_faces>1:
+            if args.detect_multiple_faces:
+                for i in range(nrof_faces):
+                    det_arr.append(np.squeeze(det[i]))
+            else:
+                bounding_box_size = (det[:,2]-det[:,0])*(det[:,3]-det[:,1])
+                img_center = img_size / 2
+                offsets = np.vstack([ (det[:,0]+det[:,2])/2-img_center[1], (det[:,1]+det[:,3])/2-img_center[0] ])
+                offset_dist_squared = np.sum(np.power(offsets,2.0),0)
+                index = np.argmax(bounding_box_size-offset_dist_squared*2.0) # some extra weight on the centering
+                det_arr.append(det[index,:])
+        else:
+            det_arr.append(np.squeeze(det))
+        if len(det_arr)>0:
+                faces = []
+                bboxes = []
+        for i, det in enumerate(det_arr):
+            det = np.squeeze(det)
+            bb = np.zeros(4, dtype=np.int32)
+            bb[0] = np.maximum(det[0]-args.margin/2, 0)
+            bb[1] = np.maximum(det[1]-args.margin/2, 0)
+            bb[2] = np.minimum(det[2]+args.margin/2, img_size[1])
+            bb[3] = np.minimum(det[3]+args.margin/2, img_size[0])
+            cropped = img[bb[1]:bb[3],bb[0]:bb[2],:]
+            #scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
+            scaled = np.asarray(Image.fromarray(cropped).resize((args.image_size, args.image_size), resample=Image.BILINEAR))
+
+            imageio.imsave("cropped.png", scaled)
+            faces.append(scaled)
+            bboxes.append(bb)
+            print("leaving align face")
+        return True,faces,bboxes
 			
 
 def identify_person(image_vector, feature_array, k=9):
-	    top_k_ind = np.argsort([np.linalg.norm(image_vector-pred_row) \
-                            for ith_row, pred_row in enumerate(feature_array.values())])[:k]
-            result = feature_array.keys()[top_k_ind[0]]
-            acc = np.linalg.norm(image_vector-feature_array.values()[top_k_ind[0]])
-            return result, acc
+    dtype = [('name', 'S40'), ('norm', float)]
+    x = [(k.encode('utf-8'), np.linalg.norm(image_vector-pred_row)) \
+                        for (k, pred_row) in feature_array.items()]
+    #top_k_ind = np.argsort(np.array(x, dtype=dtype))[:k]
+    top_x = np.sort(np.array(x, dtype=dtype), order='norm')[:k]
+    #result = feature_array.keys()[top_k_ind[0]]
+    result = top_x[0][0].decode('utf-8')
+    print("result: " + str(result))
+    #acc = np.linalg.norm(image_vector-feature_array.values()[top_k_ind[0]])
+    acc = np.linalg.norm(image_vector-feature_array[result])
+    return result, acc
 
 
 def recognize_face(sess,pnet, rnet, onet,feature_array):
@@ -147,8 +157,11 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
 
     image_size = args.image_size
     embedding_size = embeddings.get_shape()[1]
+    #print("embedding_size:" + embedding_size)
 
-    cap = cv2.VideoCapture(-1)
+    cap = cv2.VideoCapture(0)
+    font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 18)
+
 
     while(True):
         ret, frame = cap.read()
@@ -158,30 +171,40 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
             cv2.destroyAllWindows()
             break
         if(gray.size > 0):
-            print(gray.size)
+            #print(gray.size)
+            print("shape: " + str(gray.shape[0]) + ", " + str(gray.shape[1]))
+            downsampleShape = (int(gray.shape[1] / 2), int(gray.shape[0] / 2))
+            gray = np.asarray(Image.fromarray(gray).resize(downsampleShape, resample=Image.BILINEAR))
+
             response, faces,bboxs = align_face(gray,pnet, rnet, onet)
             print(response)
             if (response == True):
-                    for i, image in enumerate(faces):
-                            bb = bboxs[i]
-                            images = load_img(image, False, False, image_size)
-                            feed_dict = { images_placeholder:images, phase_train_placeholder:False }
-                            feature_vector = sess.run(embeddings, feed_dict=feed_dict)
-                            result, accuracy = identify_person(feature_vector, feature_array,8)
-                            print(result.split("/")[2])
-                            print(accuracy)
+                for i, image in enumerate(faces):
+                    bb = bboxs[i]
+                    images = load_img(image, False, False, image_size)
+                    feed_dict = { images_placeholder:images, phase_train_placeholder:False }
+                    feature_vector = sess.run(embeddings, feed_dict=feed_dict)
+                    result, accuracy = identify_person(feature_vector, feature_array,8)
+                    result_name = result.split("/")[-2] #.encode('utf-8')
 
-                            if accuracy < 0.9:
-                                cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
-                                W = int(bb[2]-bb[0])//2
-                                H = int(bb[3]-bb[1])//2
-                                cv2.putText(gray,"Hello "+result.split("/")[2],(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
-                            else:
-                                cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
-                                W = int(bb[2]-bb[0])//2
-                                H = int(bb[3]-bb[1])//2
-                                cv2.putText(gray,"WHO ARE YOU ?",(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
-                            del feature_vector
+                    print(result_name)
+                    print(accuracy)
+
+                    if accuracy < 0.9:
+                        cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
+                        W = int(bb[2]-bb[0])//2
+                        H = int(bb[3]-bb[1])//2
+                        #cv2.putText(gray,"Hello "+result_name,(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
+                        gray_img = Image.fromarray(gray)
+                        draw = ImageDraw.Draw(gray_img)
+                        draw.text((bb[0] + W - (W//2), bb[1] - 28), result_name, font=font, fill='white')
+                        gray = np.array(gray_img)
+                    else:
+                        cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
+                        W = int(bb[2]-bb[0])//2
+                        H = int(bb[3]-bb[1])//2
+                        cv2.putText(gray,"WHO ARE YOU ?",(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
+                    del feature_vector
 
             cv2.imshow('img',gray)
         else:
