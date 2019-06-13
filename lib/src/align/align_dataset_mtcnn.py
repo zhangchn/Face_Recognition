@@ -34,6 +34,8 @@ import numpy as np
 import facenet
 import align.detect_face
 import random
+import imageio
+from PIL import Image
 from time import sleep
 
 def main(args):
@@ -81,7 +83,7 @@ def main(args):
                 print(image_path)
                 if not os.path.exists(output_filename):
                     try:
-                        img = misc.imread(image_path)
+                        img = imageio.imread(image_path)
                     except (IOError, ValueError, IndexError) as e:
                         errorMessage = '{}: {}'.format(image_path, e)
                         print(errorMessage)
@@ -122,10 +124,11 @@ def main(args):
                                 bb[2] = np.minimum(det[2]+args.margin/2, img_size[1])
                                 bb[3] = np.minimum(det[3]+args.margin/2, img_size[0])
                                 cropped = img[bb[1]:bb[3],bb[0]:bb[2],:]
-                                scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
+                                #scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
+                                scaled = np.asarray(Image.fromarray(cropped).resize((args.image_size, args.image_size), resample=Image.BILINEAR))
                                 nrof_successfully_aligned += 1
                                 output_filename_n = "{}_{}.{}".format(output_filename.split('.')[0], i, output_filename.split('.')[-1])
-                                misc.imsave(output_filename_n, scaled)
+                                imageio.imsave(output_filename_n, scaled)
                                 text_file.write('%s %d %d %d %d\n' % (output_filename_n, bb[0], bb[1], bb[2], bb[3]))
                         else:
                             print('Unable to align "%s"' % image_path)
@@ -141,7 +144,7 @@ def parse_arguments(argv):
     parser.add_argument('input_dir', type=str, help='Directory with unaligned images.')
     parser.add_argument('output_dir', type=str, help='Directory with aligned face thumbnails.')
     parser.add_argument('--image_size', type=int,
-        help='Image size (height, width) in pixels.', default=182)
+        help='Image size (height, width) in pixels.', default=160)
     parser.add_argument('--margin', type=int,
         help='Margin for the crop around the bounding box (height, width) in pixels.', default=44)
     parser.add_argument('--random_order', 

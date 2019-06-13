@@ -46,12 +46,22 @@ def main(args):
 
             # Get the paths for the corresponding images
 
-            vinayak =  ['datasets/kar_Vin_aligned/vinayak/' + f for f in os.listdir('datasets/kar_Vin_aligned/vinayak')]
-            karthik =  ['datasets/kar_Vin_aligned/karthik/' + f for f in os.listdir('datasets/kar_Vin_aligned/karthik')]
-            ashish = ['datasets/kar_Vin_aligned/Ashish/' + f for f in os.listdir('datasets/kar_Vin_aligned/Ashish')]
-            saurabh = ['datasets/kar_Vin_aligned/Saurabh/' + f for f in os.listdir('datasets/kar_Vin_aligned/Saurabh')]
-            hari = ['datasets/kar_Vin_aligned/Hari/' + f for f in os.listdir('datasets/kar_Vin_aligned/Hari')]
-            paths = vinayak+karthik+ashish+saurabh+hari
+            #vinayak =  ['datasets/kar_Vin_aligned/vinayak/' + f for f in os.listdir('datasets/kar_Vin_aligned/vinayak')]
+            #karthik =  ['datasets/kar_Vin_aligned/karthik/' + f for f in os.listdir('datasets/kar_Vin_aligned/karthik')]
+            #ashish = ['datasets/kar_Vin_aligned/Ashish/' + f for f in os.listdir('datasets/kar_Vin_aligned/Ashish')]
+            #saurabh = ['datasets/kar_Vin_aligned/Saurabh/' + f for f in os.listdir('datasets/kar_Vin_aligned/Saurabh')]
+            #hari = ['datasets/kar_Vin_aligned/Hari/' + f for f in os.listdir('datasets/kar_Vin_aligned/Hari')]
+            #paths = vinayak+karthik+ashish+saurabh+hari
+            facedir = '/tmp/face3'
+            print("dir: "+facedir)
+            names = [os.path.join(facedir, name) for name in os.listdir(facedir)
+                if os.path.isdir(os.path.join(facedir, name))]
+            paths = []
+            for name_dir in names:
+                p = [os.path.join(name_dir, f) for f in os.listdir(name_dir)]
+                for f in p:
+                    print("file: " + f)
+                paths += p
             #np.save("images.npy",paths)
             # Load the model
             facenet.load_model(args.model)
@@ -68,16 +78,16 @@ def main(args):
             
             # Run forward pass to calculate embeddings
             for i, filename in enumerate(paths):
-
+                print(os.path.dirname(filename))
                 images = facenet.load_image(filename, False, False, image_size)
                 feed_dict = { images_placeholder:images, phase_train_placeholder:False }
                 feature_vector = sess.run(embeddings, feed_dict=feed_dict)
                 extracted_dict[filename] =  feature_vector
                 if(i%100 == 0):
-			print("completed",i," images")
+                    print("completed",i," images")
 
             with open('extracted_dict.pickle','wb') as f:
-        	pickle.dump(extracted_dict,f)
+        	    pickle.dump(extracted_dict,f)
 
             
 def parse_arguments(argv):
