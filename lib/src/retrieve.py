@@ -52,31 +52,33 @@ from PIL import ImageFont, ImageDraw, Image
 from scipy.spatial.distance import cosine
 import pickle
 #face_cascade = cv2.CascadeClassifier('out/face/haarcascade_frontalface_default.xml')
-parser = argparse.ArgumentParser()
-    
 
-parser.add_argument('--lfw_batch_size', type=int,
-        help='Number of images to process in a batch in the LFW test set.', default=100)
-parser.add_argument('--image_size', type=int,
-        help='Image size (height, width) in pixels.', default=160)
-parser.add_argument('--detect_multiple_faces', type=bool,
-                        help='Detect and align multiple faces per image.', default=True)
-parser.add_argument('--margin', type=int,
-        help='Margin for the crop around the bounding box (height, width) in pixels.', default=44)
-parser.add_argument('--random_order', 
-        help='Shuffles the order of images to enable alignment using multiple processes.', action='store_true')
-parser.add_argument('--gpu_memory_fraction', type=float,
-        help='Upper bound on the amount of GPU memory that will be used by the process.', default=1.0)
+args=None
+def parse_arguments_1(argv):
+    parser = argparse.ArgumentParser()
+        
 
-args = parser.parse_args()
+    parser.add_argument('--lfw_batch_size', type=int,
+            help='Number of images to process in a batch in the LFW test set.', default=100)
+    parser.add_argument('--image_size', type=int,
+            help='Image size (height, width) in pixels.', default=160)
+    parser.add_argument('--detect_multiple_faces', type=bool,
+                            help='Detect and align multiple faces per image.', default=True)
+    parser.add_argument('--margin', type=int,
+            help='Margin for the crop around the bounding box (height, width) in pixels.', default=44)
+    parser.add_argument('--random_order', 
+            help='Shuffles the order of images to enable alignment using multiple processes.', action='store_true')
+    parser.add_argument('--gpu_memory_fraction', type=float,
+            help='Upper bound on the amount of GPU memory that will be used by the process.', default=1.0)
 
-def align_face(img,pnet, rnet, onet):
+    args = parser.parse_args(argv)
+    return args
 
+def align_face(img, pnet, rnet, onet):
     minsize = 20 # minimum size of face
     threshold = [ 0.6, 0.7, 0.7 ]  # three steps's threshold
     factor = 0.709 # scale factor
 
-    print("before img.size == 0")	
     if img.size == 0:
         print("empty array")
         return False,img,[0,0,0,0]
@@ -212,19 +214,16 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
 
 def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
 
-    response, faces,bboxs = align_face(gray,pnet, rnet, onet)
+    response, faces,bboxs = align_face(image, pnet, rnet, onet)
     result_list = []
     if (response == True):
         for i, image in enumerate(faces):
             bb = bboxs[i]
-            images = load_img(image, False, False, image_size)
+            images = load_img(image, False, False, args.image_size)
             feed_dict = { images_placeholder:images, phase_train_placeholder:False }
             feature_vector = sess.run(embeddings, feed_dict=feed_dict)
             result, accuracy = identify_person(feature_vector, feature_array,8)
             result_name = result.split("/")[-2] #.encode('utf-8')
-
-            print(result_name)
-            print(accuracy)
             # append result
             result_list.append({
                 'box': bb, 
@@ -247,6 +246,11 @@ def recognize_async(images_placeholder, phase_train_placeholder, embeddings, ses
                 #H = int(bb[3]-bb[1])//2
                 #cv2.putText(gray,"WHO ARE YOU ?",(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
             del feature_vector
-    return result
+    return result_list
 
+if __name__ == '__main__':
+    print("is main")
+    args = parse_arguments_1(sys.argv[1:])
+else :
+    args = parse_arguments_1([])
 
