@@ -129,7 +129,7 @@ def align_face(img, pnet, rnet, onet):
             #scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
             scaled = np.asarray(Image.fromarray(cropped).resize((args.image_size, args.image_size), resample=Image.BILINEAR))
 
-            imageio.imsave("cropped.png", scaled)
+            #imageio.imsave("cropped.png", scaled)
             faces.append(scaled)
             bboxes.append(bb)
             print("leaving align face")
@@ -144,7 +144,6 @@ def identify_person(image_vector, feature_array, k=9):
     top_x = np.sort(np.array(x, dtype=dtype), order='norm')[:k]
     #result = feature_array.keys()[top_k_ind[0]]
     result = top_x[0][0].decode('utf-8')
-    print("result: " + str(result))
     #acc = np.linalg.norm(image_vector-feature_array.values()[top_k_ind[0]])
     acc = np.linalg.norm(image_vector-feature_array[result])
     return result, acc
@@ -229,22 +228,7 @@ def recognize_async(images_placeholder, phase_train_placeholder, embeddings, ses
                 'box': bb, 
                 'name': result_name,
                 'acc': accuracy})
-            #if accuracy < 0.9:
 
-
-                #cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
-                #W = int(bb[2]-bb[0])//2
-                #H = int(bb[3]-bb[1])//2
-                #gray_img = Image.fromarray(gray)
-                #draw = ImageDraw.Draw(gray_img)
-                #draw.text((bb[0] + W - (W//2), bb[1] - 28), result_name, font=font, fill='white')
-                #gray = np.array(gray_img)
-
-            #else:
-                #cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
-                #W = int(bb[2]-bb[0])//2
-                #H = int(bb[3]-bb[1])//2
-                #cv2.putText(gray,"WHO ARE YOU ?",(bb[0]+W-(W//2),bb[1]-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
             del feature_vector
     return result_list
 
