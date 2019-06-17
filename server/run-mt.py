@@ -29,7 +29,7 @@ import argparse
 import threading
 import cv2
 from PIL import ImageFont, ImageDraw, Image
-import time
+import time, datetime
 
 in_img = None
 out_result = None
@@ -56,12 +56,23 @@ def update_result(result):
 
 def cam_routine():
     
+    dt = datetime.datetime
+    t = dt.utcnow()
+    #print("{}:{}:{:06d} :3".format(t.minute, t.second, t.microsecond))
     cap = cv2.VideoCapture(0)
     result = None
     font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 18)
+    t = dt.utcnow()
+    #print("{}:{}:{:06d} :4".format(t.minute, t.second, t.microsecond))
     while True:
+        t = dt.utcnow()
+        t0 = t
+        #print("{}:{}:{:06d} :<".format(t.minute, t.second, t.microsecond))
         ret, frame = cap.read()
-        gray = cv2.cvtColor(frame, 0)
+        #t = dt.utcnow()
+        #print("{}:{}:{:06d} :<<".format(t.minute, t.second, t.microsecond))
+        #gray = cv2.cvtColor(frame, 0)
+        gray = frame
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cap.release()
             cv2.destroyAllWindows()
@@ -70,33 +81,35 @@ def cam_routine():
             result = get_result()
             if result is not None:
                 #print(str(result))
+                #t = dt.utcnow()
+                #print("{}:{}:{:06d} :<<<".format(t.minute, t.second, t.microsecond))
                 for i, r in enumerate(result):
                     bb = r['box']
                     name = r['name']
                     accuracy = r['acc']
                     acc = str(accuracy)
-                    if accuracy < 0.85:
-
-                        cv2.rectangle(gray,(bb[0] * 3,bb[1] * 3),(bb[2] * 3,bb[3] * 3),(255,255,255),2)
-                        W = int(bb[2]-bb[0]) * 3
-                        H = int(bb[3]-bb[1]) * 3
-                        gray_img = Image.fromarray(gray)
-                        draw = ImageDraw.Draw(gray_img)
-                        draw.text((bb[0] * 3 + W - (W//2), bb[1] * 3 - 28), name + ': ' + acc, font=font, fill='white')
-                        gray = np.array(gray_img)
-                    else:
-                        cv2.rectangle(gray,(bb[0] * 3,bb[1]* 3),(bb[2]*3,bb[3]*3),(255,255,255),2)
-                        W = int(bb[2]-bb[0]) * 3
-                        H = int(bb[3]-bb[1]) * 3
-                        cv2.putText(gray,"???: " + str(acc),(bb[0]*3+W-(W//2),bb[1]*3-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
-            #await update_img(gray)
-            #shared['img'] = gray
+                    if accuracy >= 0.9:
+                        name = name + '??'
+                    cv2.rectangle(gray,(bb[0] * 3,bb[1] * 3),(bb[2] * 3,bb[3] * 3),(255,255,255),2)
+                    W = int(bb[2]-bb[0]) * 3
+                    H = int(bb[3]-bb[1]) * 3
+                    gray_img = Image.fromarray(gray)
+                    draw = ImageDraw.Draw(gray_img)
+                    draw.text((bb[0] * 3 + W - (W//2), bb[1] * 3 - 28), name + ': ' + acc, font=font, fill='white')
+                    gray = np.array(gray_img)
+                    #else:
+                    #    cv2.rectangle(gray,(bb[0] * 3,bb[1]* 3),(bb[2]*3,bb[3]*3),(255,255,255),2)
+                    #    W = int(bb[2]-bb[0]) * 3
+                    #    H = int(bb[3]-bb[1]) * 3
+                    #    cv2.putText(gray,"???: " + str(acc),(bb[0]*3+W-(W//2),bb[1]*3-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
             update_img(gray)
-            #print('imshow')
             cv2.imshow('img', gray)
-        time.sleep(0.0333)
+        t1 = dt.utcnow()
+        next_interval = max(0.03333 - (t1 - t0).total_seconds(), 0)
+        time.sleep(next_interval)
 
 def recognize(argv):
+    dt = datetime.datetime
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
         feature_array = pickle.load(f, encoding='utf-8') 
@@ -123,7 +136,6 @@ def recognize(argv):
                         downsampleShape = (img.shape[1] // 3, img.shape[0] // 3)
                         img = np.asarray(Image.fromarray(img).resize(downsampleShape, resample=Image.BILINEAR))
                         result = retrieve.recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
-                        #print(str(result))
                         update_result(result)
 
 def main(args):
