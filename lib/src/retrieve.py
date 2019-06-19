@@ -75,7 +75,8 @@ def parse_arguments_1(argv):
     return args
 
 def align_face(img, pnet, rnet, onet):
-    minsize = 20 # minimum size of face
+    #minsize = 20 # minimum size of face
+    minsize = 40 # minimum size of face
     threshold = [ 0.6, 0.7, 0.7 ]  # three steps's threshold
     factor = 0.709 # scale factor
 
