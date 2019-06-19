@@ -58,19 +58,17 @@ def cam_routine():
     
     dt = datetime.datetime
     t = dt.utcnow()
-    #print("{}:{}:{:06d} :3".format(t.minute, t.second, t.microsecond))
     cap = cv2.VideoCapture(0)
     result = None
-    font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 18)
+    if sys.platform == 'darwin':
+        font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 18)
+    else:
+        font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.tcc', 18)
     t = dt.utcnow()
-    #print("{}:{}:{:06d} :4".format(t.minute, t.second, t.microsecond))
     while True:
         t = dt.utcnow()
         t0 = t
-        #print("{}:{}:{:06d} :<".format(t.minute, t.second, t.microsecond))
         ret, frame = cap.read()
-        #t = dt.utcnow()
-        #print("{}:{}:{:06d} :<<".format(t.minute, t.second, t.microsecond))
         #gray = cv2.cvtColor(frame, 0)
         gray = frame
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -80,9 +78,6 @@ def cam_routine():
         if(gray.size > 0):
             result = get_result()
             if result is not None:
-                #print(str(result))
-                #t = dt.utcnow()
-                #print("{}:{}:{:06d} :<<<".format(t.minute, t.second, t.microsecond))
                 for i, r in enumerate(result):
                     bb = r['box']
                     name = r['name']
@@ -97,11 +92,6 @@ def cam_routine():
                     draw = ImageDraw.Draw(gray_img)
                     draw.text((bb[0] * 3 + W - (W//2), bb[1] * 3 - 28), name + ': ' + acc, font=font, fill='white')
                     gray = np.array(gray_img)
-                    #else:
-                    #    cv2.rectangle(gray,(bb[0] * 3,bb[1]* 3),(bb[2]*3,bb[3]*3),(255,255,255),2)
-                    #    W = int(bb[2]-bb[0]) * 3
-                    #    H = int(bb[3]-bb[1]) * 3
-                    #    cv2.putText(gray,"???: " + str(acc),(bb[0]*3+W-(W//2),bb[1]*3-7), cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),1,cv2.LINE_AA)
             update_img(gray)
             cv2.imshow('img', gray)
         t1 = dt.utcnow()
