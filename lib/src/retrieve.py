@@ -74,9 +74,36 @@ def parse_arguments_1(argv):
     args = parser.parse_args(argv)
     return args
 
+def align_face_roi(img, detector):
+    t0 = datetime.now()
+    rects = detector(img, 2)
+    t1 = datetime.now()
+    print("detector interval: {}", (t1 - t0).total_seconds())
+    if len(rects) == 0:
+        return False, img, []
+
+    img_size = np.asarray(img.shape)[0:2]
+    faces = []
+    bboxes = []
+    for rect in rects:
+        #(x, y, w, h) = rect_to_bb(rect)
+        bb = np.zeros(4, dtype=np.int32)
+        bb[0] = np.maximum(rect.left()-args.margin/2, 0)
+        bb[1] = np.maximum(rect.top()-args.margin/2, 0)
+        bb[2] = np.minimum(rect.right()+args.margin/2, img_size[1])
+        bb[3] = np.minimum(rect.bottom()+args.margin/2, img_size[0])
+        cropped = img[bb[1]:bb[3],bb[0]:bb[2],:]
+        scaled = np.asarray(Image.fromarray(cropped).resize((args.image_size, args.image_size), resample=Image.BILINEAR))
+
+        faces.append(scaled)
+        bboxes.append(bb)
+    t2 = datetime.now()
+    print("bboxes time: {}", (t2 - t1).total_seconds())
+    return True, faces, bboxes
+
 def align_face(img, pnet, rnet, onet):
     #minsize = 20 # minimum size of face
-    minsize = 40 # minimum size of face
+    minsize = 30 # minimum size of face
     threshold = [ 0.6, 0.7, 0.7 ]  # three steps's threshold
     factor = 0.709 # scale factor
 
@@ -92,7 +119,10 @@ def align_face(img, pnet, rnet, onet):
 
     img = img[:,:,0:3]
 	
+    t0 = datetime.now()
     bounding_boxes, _ = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
+    t1 = datetime.now()
+    print("detection interval: {}", (t1 - t0).total_seconds())
 
     nrof_faces = bounding_boxes.shape[0]
 
@@ -213,8 +243,10 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
             continue
 
 def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
+#def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, detector):
 
     response, faces,bboxs = align_face(image, pnet, rnet, onet)
+    #response, faces, bboxs = align_face_roi(image, detector)
     result_list = []
     if (response == True):
         for i, image in enumerate(faces):
