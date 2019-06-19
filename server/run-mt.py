@@ -27,6 +27,7 @@ import json
 from tensorflow.python.platform import gfile
 import argparse
 import threading
+import dlib
 import cv2
 from PIL import ImageFont, ImageDraw, Image
 import time, datetime
@@ -34,7 +35,7 @@ import time, datetime
 in_img = None
 out_result = None
 
-shared = {'img': None, 'result': None}
+shared = {'img': None, 'result': None, 'downsample': 2, 'recog_ready': False}
 
 #lock = threading.Lock()
 
@@ -60,17 +61,20 @@ def cam_routine():
     t = dt.utcnow()
     cap = cv2.VideoCapture(0)
     result = None
+    downsample = shared['downsample']
     if sys.platform == 'darwin':
-        font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 18)
+        font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 28)
     else:
-        font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.tcc', 18)
+        font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.tcc', 28)
     t = dt.utcnow()
+    next_interval = 1
     while True:
         t = dt.utcnow()
         t0 = t
         ret, frame = cap.read()
         #gray = cv2.cvtColor(frame, 0)
         gray = frame
+        #if cv2.waitKey(max(1, int(next_interval * 1000))) & 0xFF == ord('q'):
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cap.release()
             cv2.destroyAllWindows()
@@ -79,27 +83,37 @@ def cam_routine():
             result = get_result()
             if result is not None:
                 for i, r in enumerate(result):
-                    bb = r['box']
+                    bb = r['box'].copy()
                     name = r['name']
                     accuracy = r['acc']
-                    acc = str(accuracy)
                     if accuracy >= 0.9:
                         name = name + '??'
-                    cv2.rectangle(gray,(bb[0] * 3,bb[1] * 3),(bb[2] * 3,bb[3] * 3),(255,255,255),2)
-                    W = int(bb[2]-bb[0]) * 3
-                    H = int(bb[3]-bb[1]) * 3
+                    for i, v in enumerate(bb):
+                        bb[i] = int(v * downsample)
+                    
+                    cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),(255,255,255),2)
+                    W = int(bb[2]-bb[0])
+                    H = int(bb[3]-bb[1])
                     gray_img = Image.fromarray(gray)
                     draw = ImageDraw.Draw(gray_img)
-                    draw.text((bb[0] * 3 + W - (W//2), bb[1] * 3 - 28), name + ': ' + acc, font=font, fill='white')
+                    draw.text((bb[0] + (W//3), bb[1] - 38), name + ': ' + ("{:.2f}".format(accuracy)), font=font, fill='white')
                     gray = np.array(gray_img)
+            elif not shared['recog_ready']:
+                gray_img = Image.fromarray(gray)
+                draw = ImageDraw.Draw(gray_img)
+                draw.text((gray.shape[1] // 2, gray.shape[0] // 2), "Initializing...", font=font, fill='white')
+                gray = np.array(gray_img)
+
             update_img(gray)
             cv2.imshow('img', gray)
         t1 = dt.utcnow()
-        next_interval = max(0.03333 - (t1 - t0).total_seconds(), 0)
-        time.sleep(next_interval)
+        next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
+        #time.sleep(next_interval)
 
 def recognize(argv):
     dt = datetime.datetime
+    
+    detector = dlib.get_frontal_face_detector()
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
         feature_array = pickle.load(f, encoding='utf-8') 
@@ -110,22 +124,25 @@ def recognize(argv):
             with sess_fr.as_default():
                 image_size = (160, 160)
                 sys.stderr.write("will load model\n")
-                load_model(model_exp)
-                sys.stderr.write("did load model\n")
+                #sys.stderr.write("did load model\n")
                 pnet, rnet, onet = detect_face.create_mtcnn(sess_fr, None)
-                sys.stderr.write("will get placeholders\n")
+                load_model(model_exp)
+                #sys.stderr.write("will get placeholders\n")
                 images_placeholder = sess_fr.graph.get_tensor_by_name("input:0")
                 images_placeholder = tf.image.resize_images(images_placeholder,image_size)
                 embeddings = sess_fr.graph.get_tensor_by_name("embeddings:0")
                 phase_train_placeholder = sess_fr.graph.get_tensor_by_name("phase_train:0")
 
+                downsample = shared['downsample']
+                shared['recog_ready'] = True
                 while True:
                     img = get_img()
                     if img is not None:
 
-                        downsampleShape = (img.shape[1] // 3, img.shape[0] // 3)
+                        downsampleShape = (int(img.shape[1] / downsample), int(img.shape[0] / downsample))
                         img = np.asarray(Image.fromarray(img).resize(downsampleShape, resample=Image.BILINEAR))
                         result = retrieve.recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
+                        #result = retrieve.recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
                         update_result(result)
 
 def main(args):
