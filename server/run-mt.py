@@ -27,7 +27,7 @@ import json
 from tensorflow.python.platform import gfile
 import argparse
 import threading
-import dlib
+#import dlib
 import cv2
 from PIL import ImageFont, ImageDraw, Image
 import time, datetime
@@ -113,7 +113,7 @@ def cam_routine():
 def recognize(argv):
     dt = datetime.datetime
     
-    detector = dlib.get_frontal_face_detector()
+    #detector = dlib.get_frontal_face_detector()
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
         feature_array = pickle.load(f, encoding='utf-8') 
