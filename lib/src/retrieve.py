@@ -76,9 +76,9 @@ def parse_arguments_1(argv):
 
 def align_face_roi(img, detector):
     t0 = datetime.now()
-    rects = detector(img, 2)
+    rects = detector(img, 1)
     t1 = datetime.now()
-    print("detector interval: {}", (t1 - t0).total_seconds())
+    print("detector interval: {}".format((t1 - t0).total_seconds()))
     if len(rects) == 0:
         return False, img, []
 
@@ -98,7 +98,7 @@ def align_face_roi(img, detector):
         faces.append(scaled)
         bboxes.append(bb)
     t2 = datetime.now()
-    print("bboxes time: {}", (t2 - t1).total_seconds())
+    print("bboxes time: {:.03f}, total: {:.03f}".format((t2 - t1).total_seconds(), (t2 - t0).total_seconds()))
     return True, faces, bboxes
 
 def align_face(img, pnet, rnet, onet):
@@ -119,10 +119,12 @@ def align_face(img, pnet, rnet, onet):
 
     img = img[:,:,0:3]
 	
+    img1 = img.copy()
+    img1 = cv2.resize(img1, None, fx=0.5, fy=0.5)
     t0 = datetime.now()
-    bounding_boxes, _ = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
+    bounding_boxes, _ = detect_face.detect_face(img1, minsize, pnet, rnet, onet, threshold, factor)
     t1 = datetime.now()
-    print("detection interval: {}", (t1 - t0).total_seconds())
+    print("detection interval: {}".format((t1 - t0).total_seconds()))
 
     nrof_faces = bounding_boxes.shape[0]
 
@@ -130,7 +132,7 @@ def align_face(img, pnet, rnet, onet):
     if nrof_faces==0:
         return False,img,[0,0,0,0]
     else:
-        det = bounding_boxes[:,0:4]
+        det = bounding_boxes[:,0:4] * 2
         det_arr = []
         img_size = np.asarray(img.shape)[0:2]
         if nrof_faces>1:
@@ -208,11 +210,11 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
             downsampleShape = (int(gray.shape[1] / 2), int(gray.shape[0] / 2))
             gray = np.asarray(Image.fromarray(gray).resize(downsampleShape, resample=Image.BILINEAR))
 
-            response, faces,bboxs = align_face(gray,pnet, rnet, onet)
+            response, faces,bboxes = align_face(gray,pnet, rnet, onet)
             print(response)
             if (response == True):
                 for i, image in enumerate(faces):
-                    bb = bboxs[i]
+                    bb = bboxes[i]
                     images = load_img(image, False, False, image_size)
                     feed_dict = { images_placeholder:images, phase_train_placeholder:False }
                     feature_vector = sess.run(embeddings, feed_dict=feed_dict)
@@ -242,27 +244,39 @@ def recognize_face(sess,pnet, rnet, onet,feature_array):
         else:
             continue
 
-def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
-#def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, detector):
+#def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
+def recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess, pnet, rnet, onet, feature_array, image):
+    response, faces, bboxes = align_face(image, pnet, rnet, onet)
+    if response is True:
+        return recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, faces, bboxes)
+    else:
+        return []
 
-    response, faces,bboxs = align_face(image, pnet, rnet, onet)
+def recognize_hog(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, detector):
+    response, faces, bboxes = align_face_roi(image, detector)
+    if response is True:
+        return recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, faces, bboxes)
+    else :
+        return []
+
+def recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, faces, bboxes):
+    #response, faces,bboxs = align_face(image, pnet, rnet, onet)
     #response, faces, bboxs = align_face_roi(image, detector)
     result_list = []
-    if (response == True):
-        for i, image in enumerate(faces):
-            bb = bboxs[i]
-            images = load_img(image, False, False, args.image_size)
-            feed_dict = { images_placeholder:images, phase_train_placeholder:False }
-            feature_vector = sess.run(embeddings, feed_dict=feed_dict)
-            result, accuracy = identify_person(feature_vector, feature_array,8)
-            result_name = result.split("/")[-2] #.encode('utf-8')
-            # append result
-            result_list.append({
-                'box': bb, 
-                'name': result_name,
-                'acc': accuracy})
+    for i, image in enumerate(faces):
+        bb = bboxes[i]
+        images = load_img(image, False, False, args.image_size)
+        feed_dict = { images_placeholder:images, phase_train_placeholder:False }
+        feature_vector = sess.run(embeddings, feed_dict=feed_dict)
+        result, accuracy = identify_person(feature_vector, feature_array,8)
+        result_name = result.split("/")[-2] #.encode('utf-8')
+        # append result
+        result_list.append({
+            'box': bb, 
+            'name': result_name,
+            'acc': accuracy})
 
-            del feature_vector
+        del feature_vector
     return result_list
 
 if __name__ == '__main__':
