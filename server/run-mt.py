@@ -73,7 +73,7 @@ def cam_routine():
     if sys.platform == 'darwin':
         font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', 28)
     else:
-        font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.tcc', 28)
+        font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', 28)
     t = dt.utcnow()
     next_interval = 1
     color1 = (255,255,255)
