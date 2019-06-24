@@ -306,7 +306,8 @@ def recognize_async(images_placeholder, phase_train_placeholder, embeddings, ses
         result_list.append({
             'box': bb, 
             'name': result_name,
-            'acc': accuracy})
+            'acc': accuracy,
+            'faceimg': image})
 
         del feature_vector
     return result_list

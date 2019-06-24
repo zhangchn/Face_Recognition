@@ -39,6 +39,7 @@ out_result = None
 shared = {
         'img': None, 
         'result': None, 
+        'result_ts': None, 
         'downsample': 1, 
         'recog_ready': False,
         'ofbbox': [],
@@ -58,9 +59,10 @@ def get_result():
     #with lock:
         return shared['result']
 
-def update_result(result):
+def update_result(result, t):
     #with lock:
         shared['result'] = result
+        shared['result_ts'] = t
 
 def cam_routine():
     
@@ -82,7 +84,7 @@ def cam_routine():
         t = dt.utcnow()
         t0 = t
         ret, frame = cap.read()
-        update_img(frame)
+        update_img(frame.copy())
         if frame is None:
             cv2.waitKey(1)
             continue
@@ -165,6 +167,7 @@ def recognize(argv):
                 downsample = shared['downsample']
                 shared['recog_ready'] = True
                 while True:
+                    t = dt.utcnow()
                     img = get_img()
                     if img is not None:
 
@@ -178,7 +181,7 @@ def recognize(argv):
                             result = retrieve.recognize_haar(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
                         else:
                             result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
-                        update_result(result)
+                        update_result(result, t)
 
 def opt_flow():
     prev = None
@@ -233,12 +236,28 @@ def opt_flow():
         shared['ofbbox'] = ofBBox
         sleep(0.033)
 
+def sample_saver():
+    dt = datetime.datetime
+    prev_ts = dt.utcfromtimestamp(0)
+    while True:
+        rs = shared['result']
+        ts = shared['result_ts']
+        if rs is not None and ts != prev_ts:
+            for i, r in enumerate(rs):
+                img = r['faceimg']
+                name = r['name']
+                acc = r['acc']
+                cv2.imwrite('/tmp/{}{}{}_{}{}{}_{:06}_{}_{:.4}_{}.png'.format(ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second, ts.microsecond, name, acc, i), img)
+        prev_ts = ts
+        sleep(0.033)
 
 def main(args):
     thread = threading.Thread(target=recognize, args=[args])
     thread.start()
     thread2 = threading.Thread(target=opt_flow)
     thread2.start()
+    thread3 = threading.Thread(target=sample_saver)
+    thread3.start()
     cam_routine()
 
 
