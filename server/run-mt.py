@@ -82,6 +82,7 @@ def cam_routine():
         t = dt.utcnow()
         t0 = t
         ret, frame = cap.read()
+        update_img(frame)
         if frame is None:
             cv2.waitKey(1)
             continue
@@ -127,7 +128,7 @@ def cam_routine():
                 draw.text((gray.shape[1] // 2, gray.shape[0] // 2), "Initializing...", font=font, fill='white')
                 gray = np.array(gray_img)
 
-            update_img(gray)
+            #update_img(gray)
             cv2.imshow('img', gray)
         t1 = dt.utcnow()
         next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
@@ -136,8 +137,10 @@ def cam_routine():
 def recognize(argv):
     dt = datetime.datetime
     
-    detector = dlib.get_frontal_face_detector()
-    use_dlib = True
+    #detector = dlib.get_frontal_face_detector()
+    detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    use_haar = True
+    use_dlib = False
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
         feature_array = pickle.load(f, encoding='utf-8') 
@@ -149,7 +152,8 @@ def recognize(argv):
                 image_size = (160, 160)
                 sys.stderr.write("will load model\n")
                 #sys.stderr.write("did load model\n")
-                if not use_dlib:
+
+                if not use_dlib and not use_haar:
                     pnet, rnet, onet = detect_face.create_mtcnn(sess_fr, None)
                 load_model(model_exp)
                 #sys.stderr.write("will get placeholders\n")
@@ -170,6 +174,8 @@ def recognize(argv):
                             img = cv2.resize(img, downsampleShape)
                         if use_dlib:
                             result = retrieve.recognize_hog(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
+                        elif use_haar:
+                            result = retrieve.recognize_haar(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
                         else:
                             result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
                         update_result(result)

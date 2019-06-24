@@ -74,6 +74,30 @@ def parse_arguments_1(argv):
     args = parser.parse_args(argv)
     return args
 
+def align_face_Haar(img, detector):
+    img1 = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    t0 = datetime.now()
+    rects = detector.detectMultiScale(img1, 1.3, 5, minSize=(80, 80))
+    t1 = datetime.now()
+    print("detector interval: {}".format((t1 - t0).total_seconds()))
+    img_size = np.asarray(img.shape)[0:2]
+    faces = []
+    bboxes = []
+    if len(rects) == 0:
+        return False, img, []
+    for (x, y, w, h) in rects:
+        bb = np.zeros(4, dtype=np.int32)
+        bb[0] = int(x)
+        bb[1] = int(y)
+        bb[2] = int(x+w)
+        bb[3] = int(y+h)
+        cropped = img[bb[1]:bb[3],bb[0]:bb[2],:]
+        scaled = np.asarray(Image.fromarray(cropped).resize((args.image_size, args.image_size), resample=Image.BILINEAR))
+        faces.append(scaled)
+        bboxes.append(bb)
+
+    return True, faces, bboxes
+    
 def align_face_roi(img, detector):
     t0 = datetime.now()
     rects = detector(img, 1)
@@ -251,6 +275,14 @@ def recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, ses
         return recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, faces, bboxes)
     else:
         return []
+
+def recognize_haar(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, detector):
+    response, faces, bboxes = align_face_Haar(image, detector)
+    if response is True:
+        return recognize_async(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, faces, bboxes)
+    else :
+        return []
+
 
 def recognize_hog(images_placeholder, phase_train_placeholder, embeddings, sess, feature_array, image, detector):
     response, faces, bboxes = align_face_roi(image, detector)
