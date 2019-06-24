@@ -84,10 +84,11 @@ def cam_routine():
         t = dt.utcnow()
         t0 = t
         ret, frame = cap.read()
-        update_img(frame.copy())
         if frame is None:
             cv2.waitKey(1)
             continue
+        else:
+            update_img(frame.copy())
         #gray = cv2.cvtColor(frame, 0)
         # pre-downsample
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
@@ -131,6 +132,7 @@ def cam_routine():
                 gray = np.array(gray_img)
 
             #update_img(gray)
+            gray = cv2.resize(gray, None, fx=0.75, fy=0.75)
             cv2.imshow('img', gray)
         t1 = dt.utcnow()
         next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
@@ -140,7 +142,8 @@ def recognize(argv):
     dt = datetime.datetime
     
     #detector = dlib.get_frontal_face_detector()
-    detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    #detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    detector = cv2.CascadeClassifier('haarcascade_frontalface_alt.xml')
     use_haar = True
     use_dlib = False
     with open(argv.pickle,'rb') as f:
