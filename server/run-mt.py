@@ -137,6 +137,7 @@ def recognize(argv):
     dt = datetime.datetime
     
     detector = dlib.get_frontal_face_detector()
+    use_dlib = True
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
         feature_array = pickle.load(f, encoding='utf-8') 
@@ -148,7 +149,8 @@ def recognize(argv):
                 image_size = (160, 160)
                 sys.stderr.write("will load model\n")
                 #sys.stderr.write("did load model\n")
-                pnet, rnet, onet = detect_face.create_mtcnn(sess_fr, None)
+                if not use_dlib:
+                    pnet, rnet, onet = detect_face.create_mtcnn(sess_fr, None)
                 load_model(model_exp)
                 #sys.stderr.write("will get placeholders\n")
                 images_placeholder = sess_fr.graph.get_tensor_by_name("input:0")
@@ -166,8 +168,10 @@ def recognize(argv):
                         #img = np.asarray(Image.fromarray(img).resize(downsampleShape, resample=Image.BILINEAR))
                         if downsample > 1:
                             img = cv2.resize(img, downsampleShape)
-                        result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
-                        #result = retrieve.recognize_hog(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
+                        if use_dlib:
+                            result = retrieve.recognize_hog(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
+                        else:
+                            result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
                         update_result(result)
 
 def opt_flow():
