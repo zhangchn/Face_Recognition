@@ -52,7 +52,7 @@ def main(args):
             #saurabh = ['datasets/kar_Vin_aligned/Saurabh/' + f for f in os.listdir('datasets/kar_Vin_aligned/Saurabh')]
             #hari = ['datasets/kar_Vin_aligned/Hari/' + f for f in os.listdir('datasets/kar_Vin_aligned/Hari')]
             #paths = vinayak+karthik+ashish+saurabh+hari
-            facedir = '/tmp/face3'
+            facedir = args.dir
             print("dir: "+facedir)
             names = [os.path.join(facedir, name) for name in os.listdir(facedir)
                 if os.path.isdir(os.path.join(facedir, name))]
@@ -66,18 +66,21 @@ def main(args):
             # Load the model
             facenet.load_model(args.model)
             
+            image_size = args.image_size
             # Get input and output tensors
             images_placeholder = tf.get_default_graph().get_tensor_by_name("input:0")
-            images_placeholder = tf.image.resize_images(images_placeholder,(160,160))
+            images_placeholder = tf.image.resize_images(images_placeholder,(image_size, image_size))
             embeddings = tf.get_default_graph().get_tensor_by_name("embeddings:0")
             phase_train_placeholder = tf.get_default_graph().get_tensor_by_name("phase_train:0")
             
-            image_size = args.image_size
             embedding_size = embeddings.get_shape()[1]
             extracted_dict = {}
             
             # Run forward pass to calculate embeddings
             for i, filename in enumerate(paths):
+                if os.path.basename(filename).startswith('.'):
+                    # skip files starting with dot
+                    continue
                 print(os.path.dirname(filename))
                 images = facenet.load_image(filename, False, False, image_size)
                 feed_dict = { images_placeholder:images, phase_train_placeholder:False }
@@ -100,6 +103,8 @@ def parse_arguments(argv):
         help='Could be either a directory containing the meta_file and ckpt_file or a model protobuf (.pb) file')
     parser.add_argument('--image_size', type=int,
         help='Image size (height, width) in pixels.', default=160)
+    parser.add_argument('--dir', type=str,
+        help='Directory for aligned face images.', default='/tmp/facex')
 
     return parser.parse_args(argv)
 
