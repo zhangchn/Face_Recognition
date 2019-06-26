@@ -38,8 +38,9 @@ out_result = None
 
 shared = {
         'img': None, 
+        'ts': None, # timestamp for img
         'result': None, 
-        'result_ts': None, 
+        'result_ts': None, # timestamp for result
         'downsample': 1, 
         'recog_ready': False,
         'ofbbox': [],
@@ -51,9 +52,10 @@ def get_img():
     #with lock:
         return shared['img']
 
-def update_img(img):
+def update_img(img, ts):
     #with lock:
         shared['img'] = img
+        shared['ts'] = ts
 
 def get_result():
     #with lock:
@@ -88,7 +90,12 @@ def cam_routine():
             cv2.waitKey(1)
             continue
         else:
-            update_img(frame.copy())
+            new_img = frame.copy()
+            shape = new_img.shape
+            w = new_img.shape[1]# // 3 * 2
+            h = new_img.shape[0] // 3 * 2
+
+            update_img(new_img[0:h, 0:w, :], dt.utcnow())
         #gray = cv2.cvtColor(frame, 0)
         # pre-downsample
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
@@ -100,6 +107,7 @@ def cam_routine():
             break
         if(gray.size > 0):
             result = get_result()
+            roi_frames = shared['ofbbox']
             if result is not None:
                 # draw face rects and result
                 for i, r in enumerate(result):
@@ -123,9 +131,11 @@ def cam_routine():
                     draw.text((bb[0] + (W//3), bb[1] - 38), name + ': ' + ("{:.2f}".format(accuracy)), font=font, fill=fill)
                     gray = np.array(gray_img)
                 # draw optical flow rects
-                for i, bbox in enumerate(shared['ofbbox']):
-                    cv2.rectangle(gray, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 0), 2)
-            elif not shared['recog_ready']:
+            for i, rois in enumerate(roi_frames):
+                for roi in rois[0]:
+                    bbox = roi
+                    cv2.rectangle(gray, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 40 * i), 2)
+            if not shared['recog_ready']:
                 gray_img = Image.fromarray(gray)
                 draw = ImageDraw.Draw(gray_img)
                 draw.text((gray.shape[1] // 2, gray.shape[0] // 2), "Initializing...", font=font, fill='white')
@@ -183,6 +193,13 @@ def recognize(argv):
                         elif use_haar:
                             result = retrieve.recognize_haar(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
                         else:
+                            '''
+                            roi_frames = shared['ofbbox']
+                            if len(roi_frames) > 0:
+                                roi_list = rois[0][0]
+                                for roi in roi_list:
+                                    if  
+                            '''
                             result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
                         update_result(result, t)
 
@@ -194,26 +211,27 @@ def opt_flow():
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     downsample = 8
+    dt = datetime.datetime
+    prev_ts = dt.utcfromtimestamp(0)
     while True:
+        img = shared['img']
+        ts = shared['ts']
+        if img is None or ts == prev_ts:
+            sleep(0.01)
+            continue
+        img_size = np.asarray(img.shape)[0:2]
         if curr is None:
-            sleep(0.03)
-            if shared['img'] is not None:
-                curr = shared['img']
-                # resize curr
-                curr = cv2.resize(curr, None, fx= 1/downsample, fy=1/downsample)
-                # initialize hsv
-                hsv = np.zeros_like(curr)
-                hsv[..., 1] = 255
-                curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
-            continue
-        if shared['img'] is not None:
-            prev = curr
-            curr = shared['img']
+            # resize for current frame
+            curr = cv2.resize(img, None, fx= 1/downsample, fy=1/downsample)
+            # initialize hsv
+            hsv = np.zeros_like(curr)
+            hsv[..., 1] = 255
             curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
-            curr = cv2.resize(curr, None, fx= 1/downsample, fy=1/downsample)
-        else:
-            sleep(0.033)
             continue
+        else:
+            prev = curr
+            curr = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            curr = cv2.resize(curr, None, fx= 1/downsample, fy=1/downsample)
 
         flow = cv2.calcOpticalFlowFarneback(prev, curr, None, 0.5, 3, 15, 2, 7, 1.5, 0)
         mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
@@ -226,17 +244,23 @@ def opt_flow():
         gray = cv2.threshold(gray, 25, 255, cv2.THRESH_BINARY)[1]
         contours, hier = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         ofBBox = []
+        roi = []
+        margin = 20 // downsample
         for c in contours:
             if cv2.contourArea(c) < 800:
                 continue
             (x, y, w, h) = cv2.boundingRect(c)
             bb = np.zeros(4, dtype=np.int32)
-            bb[0] = x * downsample
-            bb[1] = y * downsample
-            bb[2] = (x+w) * downsample
-            bb[3] = (y+h) * downsample
+            #expand with a fixed margin
+            bb[0] = np.maximum(x - margin, 0) * downsample
+            bb[1] = np.maximum(y - margin, 0) * downsample
+            bb[2] = np.minimum((x+w+margin) * downsample, img_size[1])
+            bb[3] = np.minimum((y+h+margin) * downsample, img_size[0])
             ofBBox.append(bb)
-        shared['ofbbox'] = ofBBox
+            #roi.append(img[bb[1]:bb[3], bb[0]:bb[2], :])
+        shared['ofbbox'].insert(0, (ofBBox, img))
+        if len(shared['ofbbox']) > 3:
+            shared['ofbbox'].pop()
         sleep(0.033)
 
 def sample_saver():
