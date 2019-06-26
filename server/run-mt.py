@@ -39,11 +39,12 @@ out_result = None
 shared = {
         'img': None, 
         'ts': None, # timestamp for img
-        'result': None, 
+        'result': [], 
         'result_ts': None, # timestamp for result
         'downsample': 1, 
         'recog_ready': False,
         'ofbbox': [],
+        'candidate_area' : []
         }
 
 #lock = threading.Lock()
@@ -70,8 +71,9 @@ def cam_routine():
     
     dt = datetime.datetime
     t = dt.utcnow()
-    cap = cv2.VideoCapture(0)
-    #cap = cv2.VideoCapture('rtsp://192.168.10.100/live1.sdp')
+    #cam = 0
+    cam = 'rtsp://192.168.10.100/live1.sdp'
+    cap = cv2.VideoCapture(cam)
     result = None
     downsample = shared['downsample']
     if sys.platform == 'darwin':
@@ -82,20 +84,33 @@ def cam_routine():
     next_interval = 1
     color1 = (255,255,255)
     color2 = (80, 80, 80)
+    failcount = 0
     while True:
         t = dt.utcnow()
         t0 = t
         ret, frame = cap.read()
         if frame is None:
             cv2.waitKey(1)
+            failcount += 1
+            if failcount > 50000:
+                cap.release()
+                sleep(5)
+                cap = cv2.VideoCapture(cam)
+                failcount = 0
             continue
         else:
+            failcount = 0
             new_img = frame.copy()
+
+            # confine area to top part
             shape = new_img.shape
             w = new_img.shape[1]# // 3 * 2
-            h = new_img.shape[0] // 3 * 2
+            h = new_img.shape[0] // 2
 
             update_img(new_img[0:h, 0:w, :], dt.utcnow())
+            '''
+            update_img(new_img, dt.utcnow())
+            '''
         #gray = cv2.cvtColor(frame, 0)
         # pre-downsample
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
@@ -107,7 +122,7 @@ def cam_routine():
             break
         if(gray.size > 0):
             result = get_result()
-            roi_frames = shared['ofbbox']
+            roi_frames = shared['candidate_area']
             if result is not None:
                 # draw face rects and result
                 for i, r in enumerate(result):
@@ -132,9 +147,8 @@ def cam_routine():
                     gray = np.array(gray_img)
                 # draw optical flow rects
             for i, rois in enumerate(roi_frames):
-                for roi in rois[0]:
-                    bbox = roi
-                    cv2.rectangle(gray, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 40 * i), 2)
+                bbox = rois[0]
+                cv2.rectangle(gray, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 40), 2)
             if not shared['recog_ready']:
                 gray_img = Image.fromarray(gray)
                 draw = ImageDraw.Draw(gray_img)
@@ -144,6 +158,9 @@ def cam_routine():
             #update_img(gray)
             gray = cv2.resize(gray, None, fx=0.75, fy=0.75)
             cv2.imshow('img', gray)
+            
+            farneback = shared['of']
+            cv2.imshow('optical flow', farneback)
         t1 = dt.utcnow()
         next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
         #time.sleep(next_interval)
@@ -154,7 +171,7 @@ def recognize(argv):
     #detector = dlib.get_frontal_face_detector()
     #detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
     detector = cv2.CascadeClassifier('haarcascade_frontalface_alt.xml')
-    use_haar = True
+    use_haar = False#True
     use_dlib = False
     with open(argv.pickle,'rb') as f:
         sys.stderr.write("will load feature\n")
@@ -194,13 +211,45 @@ def recognize(argv):
                             result = retrieve.recognize_haar(images_placeholder, phase_train_placeholder, embeddings, sess_fr, feature_array, img, detector)
                         else:
                             '''
-                            roi_frames = shared['ofbbox']
-                            if len(roi_frames) > 0:
-                                roi_list = rois[0][0]
-                                for roi in roi_list:
-                                    if  
+                            of_frames = shared['ofbbox']
+                            rois = []
+                            if len(of_frames) > 0:
+                                previous_faces = get_result()
+                                rois.extend([r['box'] for r in previous_faces])
+                                of_list = of_frames[0][0]
+                                for bbox in of_list:
+                                    temp = []
+                                    for j, roi in enumerate(rois):
+                                        deltaX = np.maximum(roi[0], bbox[0]) - np.minimum(roi[2], bbox[2])
+                                        deltaY = np.maximum(roi[1], bbox[1]) - np.minimum(roi[3], bbox[3])
+                                        if deltaX < 0 and deltaY < 0:
+                                            bbox[0] = np.minimum(roi[0], bbox[0])
+                                            bbox[1] = np.minimum(roi[1], bbox[1])
+                                            bbox[2] = np.maximum(roi[2], bbox[2])
+                                            bbox[3] = np.maximum(roi[3], bbox[3])
+                                            rois[j][0] = bbox[0]
+                                            rois[j][1] = bbox[1]
+                                            rois[j][2] = bbox[2]
+                                            rois[j][3] = bbox[3]
+                                        else:
+                                            temp.append(bbox)
+                                    rois.extend(temp)
                             '''
-                            result = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, img)
+                            result = []
+                            for roi in shared['candidate_area']:
+                                bbox = roi[0]
+                                cropped = roi[1]
+                                #print("align in {},{}: {},{}".format(bbox[0], bbox[1], bbox[2], bbox[3]))
+                                r = retrieve.recognize_mtcnn(images_placeholder, phase_train_placeholder, embeddings, sess_fr, pnet, rnet, onet, feature_array, cropped)
+                                for i, face in enumerate(r):
+                                    b = face['box']
+                                    b[0] += bbox[0]
+                                    b[1] += bbox[1]
+                                    b[2] += bbox[0]
+                                    b[3] += bbox[1]
+                                    r[i]['box'] = b
+                                    print("face: {},{},{},{}".format(b[0], b[1], b[2], b[3]))
+                                result.extend(r)
                         update_result(result, t)
 
 def opt_flow():
@@ -242,6 +291,7 @@ def opt_flow():
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
         gray = cv2.threshold(gray, 25, 255, cv2.THRESH_BINARY)[1]
+        shared['of'] = bgr
         contours, hier = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         ofBBox = []
         roi = []
@@ -259,8 +309,38 @@ def opt_flow():
             ofBBox.append(bb)
             #roi.append(img[bb[1]:bb[3], bb[0]:bb[2], :])
         shared['ofbbox'].insert(0, (ofBBox, img))
-        if len(shared['ofbbox']) > 3:
+        if len(shared['ofbbox']) > 2:
             shared['ofbbox'].pop()
+        of_frames = shared['ofbbox']
+        rois = []
+        if len(of_frames) > 0:
+            previous_faces = get_result()
+            rois.extend([r['box'].copy() for r in previous_faces])
+            of_list = of_frames[0][0]
+            for bbox in of_list:
+                temp = []
+                if len(rois) == 0:
+                    temp.append(bbox)
+                else:
+                    for j, roi in enumerate(rois):
+                        deltaX = np.maximum(roi[0], bbox[0]) - np.minimum(roi[2], bbox[2])
+                        deltaY = np.maximum(roi[1], bbox[1]) - np.minimum(roi[3], bbox[3])
+                        if deltaX < 0 and deltaY < 0:
+                            bbox[0] = np.minimum(roi[0], bbox[0])
+                            bbox[1] = np.minimum(roi[1], bbox[1])
+                            bbox[2] = np.maximum(roi[2], bbox[2])
+                            bbox[3] = np.maximum(roi[3], bbox[3])
+                            rois[j][0] = bbox[0]
+                            rois[j][1] = bbox[1]
+                            rois[j][2] = bbox[2]
+                            rois[j][3] = bbox[3]
+                        else:
+                            temp.append(bbox)
+                rois.extend(temp)
+            candidate_area = [(bbox, img[bbox[1]:bbox[3], bbox[0]:bbox[2], :]) for bbox in rois]
+            #print("roi count: {}".format(len(rois)))
+
+        shared['candidate_area'] = candidate_area
         sleep(0.033)
 
 def sample_saver():
