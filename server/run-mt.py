@@ -44,7 +44,8 @@ shared = {
         'downsample': 1, 
         'recog_ready': False,
         'ofbbox': [],
-        'candidate_area' : []
+        'candidate_area' : [],
+        'of': None
         }
 
 #lock = threading.Lock()
@@ -160,7 +161,8 @@ def cam_routine():
             cv2.imshow('img', gray)
             
             farneback = shared['of']
-            cv2.imshow('optical flow', farneback)
+            if farneback is not None:
+                cv2.imshow('optical flow', farneback)
         t1 = dt.utcnow()
         next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
         #time.sleep(next_interval)
