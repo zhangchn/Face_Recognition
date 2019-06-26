@@ -194,7 +194,7 @@ def align_face(img, pnet, rnet, onet):
 			
 
 def identify_person(image_vector, feature_array, k=9):
-    dtype = [('name', 'S40'), ('norm', float)]
+    dtype = [('name', 'S128'), ('norm', float)]
     x = [(k.encode('utf-8'), np.linalg.norm(image_vector-pred_row)) \
                         for (k, pred_row) in feature_array.items()]
     #top_k_ind = np.argsort(np.array(x, dtype=dtype))[:k]
