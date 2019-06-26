@@ -354,7 +354,7 @@ def sample_saver():
                 img = r['faceimg']
                 name = r['name']
                 acc = r['acc']
-                cv2.imwrite('/tmp/{}{}{}_{}{}{}_{:06}_{}_{:.4}_{}.png'.format(ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second, ts.microsecond, name, acc, i), img)
+                cv2.imwrite('/tmp/{}{:02}{:02}_{:02}{:02}{:02}_{:06}_{}_{:.04}_{}.png'.format(ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second, ts.microsecond, name, acc, i), img)
         prev_ts = ts
         sleep(0.033)
 
