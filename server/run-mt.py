@@ -45,6 +45,7 @@ shared = {
         'recog_ready': False,
         'ofbbox': [],
         'candidate_area' : [],
+        'candidate_ts' : None,
         'of': None
         }
 
@@ -106,27 +107,27 @@ def cam_routine():
             continue
         else:
             failcount = 0
-            new_img = frame.copy()
+            img_copy = frame.copy()
 
             # confine area to top part
-            shape = new_img.shape
-            w = new_img.shape[1]
-            h = new_img.shape[0] // 3 * 2
+            shape = img_copy.shape
+            w = img_copy.shape[1]
+            h = img_copy.shape[0] // 3 * 2
 
-            update_img(new_img[0:h, 0:w, :], dt.utcnow())
+            update_img(img_copy[0:h, 0:w, :], dt.utcnow())
             '''
-            update_img(new_img, dt.utcnow())
+            update_img(img_copy, dt.utcnow())
             '''
         #gray = cv2.cvtColor(frame, 0)
         # pre-downsample
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
-        gray = frame
+        #gray = frame
         #if cv2.waitKey(max(1, int(next_interval * 1000))) & 0xFF == ord('q'):
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cap.release()
             cv2.destroyAllWindows()
             break
-        if(gray.size > 0):
+        if(frame.size > 0):
             result = get_result()
             roi_frames = shared['candidate_area']
             if result is not None:
@@ -144,27 +145,26 @@ def cam_routine():
                         fill = 'white'
                     for i, v in enumerate(bb):
                         bb[i] = int(v * downsample)
-                    cv2.rectangle(gray,(bb[0],bb[1]),(bb[2],bb[3]),color,2)
+                    cv2.rectangle(frame,(bb[0],bb[1]),(bb[2],bb[3]),color,2)
                     W = int(bb[2]-bb[0])
                     H = int(bb[3]-bb[1])
-                    gray_img = Image.fromarray(gray)
-                    draw = ImageDraw.Draw(gray_img)
+                    frame_img = Image.fromarray(frame)
+                    draw = ImageDraw.Draw(frame_img)
                     draw.text((bb[0] + (W//3), bb[1] - 38), name + ': ' + ("{:.2f}".format(accuracy)), font=font, fill=fill)
-                    gray = np.array(gray_img)
+                    frame = np.array(frame_img)
                 # draw optical flow rects
             for i, rois in enumerate(roi_frames):
                 bbox = rois[0]
-                cv2.rectangle(gray, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 40), 2)
+                cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (255,255, 40), 2)
             if not shared['recog_ready']:
-                gray_img = Image.fromarray(gray)
-                draw = ImageDraw.Draw(gray_img)
-                draw.text((gray.shape[1] // 2, gray.shape[0] // 2), "Initializing...", font=font, fill='white')
-                gray = np.array(gray_img)
+                frame_img = Image.fromarray(frame)
+                draw = ImageDraw.Draw(frame_img)
+                draw.text((frame.shape[1] // 2, frame.shape[0] // 2), "Initializing...", font=font, fill='white')
+                frame = np.array(frame_img)
 
-            #update_img(gray)
-            gray = cv2.resize(gray, None, fx=0.75, fy=0.75)
-            cv2.putText(gray, framerate, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255) )
-            cv2.imshow('img', gray)
+            frame = cv2.resize(frame, None, fx=0.75, fy=0.75)
+            cv2.putText(frame, framerate, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255) )
+            cv2.imshow('img', frame)
             
             farneback = shared['of']
             if farneback is not None:
@@ -325,6 +325,7 @@ def opt_flow():
             candidate_area = [(bbox, img[bbox[1]:bbox[3], bbox[0]:bbox[2], :]) for bbox in rois]
             #print("roi count: {}".format(len(rois)))
             shared['candidate_area'] = candidate_area
+            shared['candidate_ts'] = ts
         sleep(0.033)
 
 def sample_saver():
@@ -342,12 +343,32 @@ def sample_saver():
         prev_ts = ts
         sleep(0.033)
 
+def roi_saver():
+    dt = datetime.datetime
+    prev_ts = dt.utcfromtimestamp(0)
+    while True:
+        #ts = dt.utcnow()
+        ts = shared['candidate_ts']
+        if ts == prev_ts:
+            sleep(0.03)
+            continue
+        prev_ts = ts
+        candidate_area = shared['candidate_area']
+        for i, (bbox, img) in enumerate(candidate_area):
+            path = '/tmp/cand_{}{:02}{:02}_{:02}{:02}{:02}_{:06}_{}.png'.format(
+                ts.year, ts.month, 
+                ts.day, ts.hour, ts.minute, 
+                ts.second, ts.microsecond, i)
+            cv2.imwrite(path, img)
+        sleep(0.18)
+
 def main(args):
-    thread = threading.Thread(target=recognize, args=[args])
-    thread.start()
+    thread1 = threading.Thread(target=recognize, args=[args])
+    thread1.start()
     thread2 = threading.Thread(target=opt_flow)
     thread2.start()
     thread3 = threading.Thread(target=sample_saver)
+    #thread3 = threading.Thread(target=roi_saver)
     thread3.start()
     cam_routine()
 
