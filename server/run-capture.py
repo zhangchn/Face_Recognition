@@ -74,8 +74,8 @@ def cam_routine():
     
     dt = datetime.datetime
     t = dt.utcnow()
-    cam = 0
-    #cam = 'rtsp://192.168.10.100/live1.sdp'
+    #cam = 0
+    cam = 'rtsp://192.168.10.100/live1.sdp'
     cap = cv2.VideoCapture(cam)
     result = None
     downsample = shared['downsample']
@@ -95,7 +95,9 @@ def cam_routine():
         frametime.append(t)
         if len(frametime) > 5:
             frametime = frametime[1:]
-        framerate = "{:.1f} fps".format((len(frametime) - 1) / (frametime[-1] - frametime[0]).total_seconds()) if len(frametime) > 1 else 'N/A'
+        framerate = "{:.1f} fps".format(
+                    (len(frametime) - 1) / (frametime[-1] - frametime[0]).total_seconds()
+                ) if len(frametime) > 1 else 'N/A'
         ret, frame = cap.read()
         if frame is None:
             cv2.waitKey(1)
@@ -173,7 +175,7 @@ def cam_routine():
                 cv2.imshow('optical flow', farneback)
                 '''
         t1 = dt.utcnow()
-        next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
+        #next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
         #time.sleep(next_interval)
 
 def recognize(argv):
@@ -355,18 +357,26 @@ def roi_sender():
     except socket.error as msg:
         print("socket error: {}".format(msg))
     while True:
-        #ts = dt.utcnow()
         ts = shared['candidate_ts']
         if ts == prev_ts:
+            print("sleep")
             sleep(0.03)
             continue
         prev_ts = ts
         candidate_area = shared['candidate_area']
         for i, (bbox, img) in enumerate(candidate_area):
+            t0 = dt.utcnow()
             img_bytes = pickle.dumps(img)
             try:
+                t1 = dt.utcnow()
                 sock.send("{}:{}\n".format(i, len(img_bytes)).encode())
+                t2 = dt.utcnow()
                 sock.sendall(img_bytes)
+                t3 = dt.utcnow()
+                print("t1: {:.3f}, t2: {:.3f}, t3: {:.3f}".format(
+                    (t1 - t0).total_seconds(),
+                    (t2 - t1).total_seconds(),
+                    (t3 - t2).total_seconds()))
             except:
                 sock.close()
                 try:
