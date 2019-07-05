@@ -24,6 +24,7 @@ def receive_socket():
 
     while True:
         conn, addr = sock.accept()
+        print("connection accepted")
         buf = b''
 
         length = -1
@@ -34,7 +35,6 @@ def receive_socket():
             if not data:
                 break
             buf += data
-            #print("incoming: {} bytes".format(len(data)))
             if state == 0:
                 try:
                     sep_idx1 = buf.index(b"\n")
@@ -47,13 +47,10 @@ def receive_socket():
                 state = 1
             if state == 1:
                 if len(buf) < length:
-                    #print("insufficient bytes")
                     continue
                 img = loads(buf[0:length])
                 if idx < 3:
                     shared['imgs'][idx] = img
-                #cv2.imshow('img{}'.format(idx), img)
-                #cv2.waitKey(1)
                 buf = buf[length:]
                 state = 0
 

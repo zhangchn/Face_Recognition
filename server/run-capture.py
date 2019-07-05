@@ -89,6 +89,14 @@ def cam_routine():
     color2 = (80, 80, 80)
     failcount = 0
     frametime = []
+    # prepare for optical flow
+    prev = None
+    curr = None
+    hsv = None
+    of_downsample = 8
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    
     while True:
         t = dt.utcnow()
         t0 = t
@@ -126,10 +134,59 @@ def cam_routine():
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
         #gray = frame
         #if cv2.waitKey(max(1, int(next_interval * 1000))) & 0xFF == ord('q'):
+
+        '''
+        # calculate optical flow in main thread
+        img_size = np.asarray(shape)[0:2]
+        if curr is None:
+            # resize for current frame
+            curr = cv2.resize(img_copy, None, fx= 1/of_downsample, fy=1/of_downsample)
+            # initialize hsv
+            hsv = np.zeros_like(curr)
+            hsv[..., 1] = 255
+            curr = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
+        else:
+            prev = curr
+            curr = cv2.cvtColor(img_copy, cv2.COLOR_BGR2GRAY)
+            curr = cv2.resize(curr, None, fx= 1/of_downsample, fy=1/of_downsample)
+            ofBBox, gray = calc_opt_flow(img_size, curr, prev, hsv, kernel, of_downsample)
+            cv2.imshow('gray', gray)
+
+            #previous_faces = get_result()
+            #rois.extend([r['box'].copy() for r in previous_faces])
+            rois = []
+            #of_list = ofBBox[0]
+            for bbox in ofBBox:
+                temp = []
+                if len(rois) == 0:
+                    temp.append(bbox)
+                else:
+                    for j, roi in enumerate(rois):
+                        deltaX = np.maximum(roi[0], bbox[0]) - np.minimum(roi[2], bbox[2])
+                        deltaY = np.maximum(roi[1], bbox[1]) - np.minimum(roi[3], bbox[3])
+                        if deltaX < 0 and deltaY < 0:
+                            bbox[0] = np.minimum(roi[0], bbox[0])
+                            bbox[1] = np.minimum(roi[1], bbox[1])
+                            bbox[2] = np.maximum(roi[2], bbox[2])
+                            bbox[3] = np.maximum(roi[3], bbox[3])
+                            rois[j][0] = bbox[0]
+                            rois[j][1] = bbox[1]
+                            rois[j][2] = bbox[2]
+                            rois[j][3] = bbox[3]
+                        else:
+                            temp.append(bbox)
+                rois.extend(temp)
+            candidate_area = [(bbox, img_copy[bbox[1]:bbox[3], bbox[0]:bbox[2], :]) for bbox in rois]
+            shared['candidate_area'] = candidate_area
+            shared['candidate_ts'] = t
+        '''
+
         if cv2.waitKey(1) & 0xFF == ord('q'):
             cap.release()
             cv2.destroyAllWindows()
             break
+        print("fps: " + framerate)
+        '''
         if(frame.size > 0):
             result = get_result()
             roi_frames = shared['candidate_area']
@@ -168,13 +225,11 @@ def cam_routine():
             frame = cv2.resize(frame, None, fx=0.75, fy=0.75)
             cv2.putText(frame, framerate, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255) )
             cv2.imshow('img', frame)
-            
             farneback = shared['of']
-            '''
             if farneback is not None:
                 cv2.imshow('optical flow', farneback)
                 '''
-        t1 = dt.utcnow()
+        #t1 = dt.utcnow()
         #next_interval = max(0.04 - (t1 - t0).total_seconds(), 0)
         #time.sleep(next_interval)
 
@@ -240,6 +295,34 @@ def recognize(argv):
                                 result.extend(r)
                         update_result(result, t)
 
+def calc_opt_flow(img_size, curr, prev, hsv, kernel, downsample):
+    flow = cv2.calcOpticalFlowFarneback(prev, curr, None, 0.5, 3, 15, 2, 7, 1.5, 0)
+    mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+    hsv[..., 0] = ang * 180 / np.pi / 2
+    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
+    of_threshold = 30
+    gray = cv2.threshold(gray, of_threshold, 255, cv2.THRESH_BINARY)[1]
+    #shared['of'] = gray
+    contours, hier = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    ofBBox = []
+    margin = 10 // downsample
+    for c in contours:
+        if cv2.contourArea(c) < 800:
+            continue
+        (x, y, w, h) = cv2.boundingRect(c)
+        bb = np.zeros(4, dtype=np.int32)
+        #expand with a fixed margin
+        bb[0] = np.maximum(x - margin, 0) * downsample
+        bb[1] = np.maximum(y - margin, 0) * downsample
+        bb[2] = np.minimum((x+w+margin) * downsample, img_size[1])
+        bb[3] = np.minimum((y+h+margin) * downsample, img_size[0])
+        ofBBox.append(bb)
+    return ofBBox, gray
+
 def opt_flow():
     prev = None
     curr = None
@@ -270,33 +353,7 @@ def opt_flow():
             curr = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             curr = cv2.resize(curr, None, fx= 1/downsample, fy=1/downsample)
 
-        flow = cv2.calcOpticalFlowFarneback(prev, curr, None, 0.5, 3, 15, 2, 7, 1.5, 0)
-        mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-        hsv[..., 0] = ang * 180 / np.pi / 2
-        hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
-
-        bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
-        of_threshold = 30
-        gray = cv2.threshold(gray, of_threshold, 255, cv2.THRESH_BINARY)[1]
-        shared['of'] = gray
-        contours, hier = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        ofBBox = []
-        roi = []
-        margin = 10 // downsample
-        for c in contours:
-            if cv2.contourArea(c) < 800:
-                continue
-            (x, y, w, h) = cv2.boundingRect(c)
-            bb = np.zeros(4, dtype=np.int32)
-            #expand with a fixed margin
-            bb[0] = np.maximum(x - margin, 0) * downsample
-            bb[1] = np.maximum(y - margin, 0) * downsample
-            bb[2] = np.minimum((x+w+margin) * downsample, img_size[1])
-            bb[3] = np.minimum((y+h+margin) * downsample, img_size[0])
-            ofBBox.append(bb)
-            #roi.append(img[bb[1]:bb[3], bb[0]:bb[2], :])
+        ofBBox, gray = calc_opt_flow(img_size, curr, prev, hsv, kernel, downsample)
         if len(ofBBox) > 0:
             shared['ofbbox'].insert(0, (ofBBox, img))
         if len(shared['ofbbox']) > 3:
@@ -359,24 +416,24 @@ def roi_sender():
     while True:
         ts = shared['candidate_ts']
         if ts == prev_ts:
-            print("sleep")
+            #print("sleep")
             sleep(0.03)
             continue
         prev_ts = ts
         candidate_area = shared['candidate_area']
         for i, (bbox, img) in enumerate(candidate_area):
-            t0 = dt.utcnow()
+            #t0 = dt.utcnow()
             img_bytes = pickle.dumps(img)
             try:
-                t1 = dt.utcnow()
+                #t1 = dt.utcnow()
                 sock.send("{}:{}\n".format(i, len(img_bytes)).encode())
-                t2 = dt.utcnow()
+                #t2 = dt.utcnow()
                 sock.sendall(img_bytes)
-                t3 = dt.utcnow()
-                print("t1: {:.3f}, t2: {:.3f}, t3: {:.3f}".format(
-                    (t1 - t0).total_seconds(),
-                    (t2 - t1).total_seconds(),
-                    (t3 - t2).total_seconds()))
+                #t3 = dt.utcnow()
+                #print("t1: {:.3f}, t2: {:.3f}, t3: {:.3f}".format(
+                #    (t1 - t0).total_seconds(),
+                #    (t2 - t1).total_seconds(),
+                #    (t3 - t2).total_seconds()))
             except:
                 sock.close()
                 try:
@@ -397,6 +454,7 @@ def main(args):
     thread2 = threading.Thread(target=opt_flow)
     thread3 = threading.Thread(target=roi_sender)
     #thread3 = threading.Thread(target=sample_saver)
+
     #thread.start()
     thread2.start()
     thread3.start()
