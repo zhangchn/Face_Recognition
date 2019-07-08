@@ -74,8 +74,8 @@ def cam_routine():
     
     dt = datetime.datetime
     t = dt.utcnow()
-    #cam = 0
-    cam = 'rtsp://192.168.10.100/live1.sdp'
+    cam = 0
+    #cam = 'rtsp://192.168.10.100/live1.sdp'
     cap = cv2.VideoCapture(cam)
     result = None
     downsample = shared['downsample']
@@ -118,17 +118,17 @@ def cam_routine():
             continue
         else:
             failcount = 0
-            img_copy = frame.copy()
+            img_copy = frame#.copy()
 
             # confine area to top part
             shape = img_copy.shape
             w = img_copy.shape[1]
             h = img_copy.shape[0] // 3 * 2
 
+            '''
             update_img(img_copy[0:h, 0:w, :], dt.utcnow())
             '''
             update_img(img_copy, dt.utcnow())
-            '''
         #gray = cv2.cvtColor(frame, 0)
         # pre-downsample
         #gray = cv2.resize(frame, None, fx=0.75, fy=0.75)
@@ -339,6 +339,7 @@ def opt_flow():
         if img is None or ts == prev_ts:
             sleep(0.01)
             continue
+        img = img.copy()
         img_size = np.asarray(img.shape)[0:2]
         if curr is None:
             # resize for current frame
@@ -409,6 +410,7 @@ def roi_sender():
     dt = datetime.datetime
     prev_ts = dt.utcfromtimestamp(0)
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    counter = 0
     try:
         sock.connect('/tmp/img_sock')
     except socket.error as msg:
@@ -421,26 +423,36 @@ def roi_sender():
             continue
         prev_ts = ts
         candidate_area = shared['candidate_area']
-        for i, (bbox, img) in enumerate(candidate_area):
-            #t0 = dt.utcnow()
-            img_bytes = pickle.dumps(img)
-            try:
+        counter += 1
+        try:
+            img = shared['img']
+            if img is not None and counter % 100 == 0:
+                img = img.copy()
+                img_mem = memoryview(np.reshape(img, img.shape[0] * img.shape[1] * img.shape[2])).cast('B')
+                sock.send("{}:{}:{}:{}:{},{},{}\n".format(0, len(img_mem), 0, 0, img.shape[0], img.shape[1], img.shape[2]).encode())
+                sock.sendall(img_mem)
+
+            for i, (bbox, img) in enumerate(candidate_area):
+                #img_bytes = pickle.dumps(img)
+                img_mem = memoryview(np.reshape(img, img.shape[0] * img.shape[1] * img.shape[2])).cast('B')
                 #t1 = dt.utcnow()
-                sock.send("{}:{}\n".format(i, len(img_bytes)).encode())
+                #print("len: {}".format(len(img_mem)))
+                sock.send("{}:{}:{}:{}:{},{},{}\n".format(i + 1, len(img_mem), bbox[0], bbox[1], img.shape[0], img.shape[1], img.shape[2]).encode())
                 #t2 = dt.utcnow()
-                sock.sendall(img_bytes)
+                sock.sendall(img_mem)
                 #t3 = dt.utcnow()
                 #print("t1: {:.3f}, t2: {:.3f}, t3: {:.3f}".format(
                 #    (t1 - t0).total_seconds(),
                 #    (t2 - t1).total_seconds(),
                 #    (t3 - t2).total_seconds()))
-            except:
-                sock.close()
-                try:
-                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    sock.connect('/tmp/img_sock')
-                except socket.error as msg:
-                    print("socket error: {}".format(msg))
+        except Exception as e:
+            print(e)
+            sock.close()
+            try:
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect('/tmp/img_sock')
+            except socket.error as msg:
+                print("socket error: {}".format(msg))
             '''
             path = '/tmp/cand_{}{:02}{:02}_{:02}{:02}{:02}_{:06}_{}.png'.format(
                 ts.year, ts.month, 
